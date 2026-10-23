@@ -1,11 +1,16 @@
 import os
 from fastapi import FastAPI, Header, HTTPException, Depends
 from app.models.schemas import InterceptRequest, PolicyDecision, AuditEvent, ApprovalRecord
-from app.evaluate.policy_engine import evaluate
+from app.evaluate.policy_engine import evaluate, redact_pii
 from app.audit import store as audit_store
 from app.approvals import store as approval_store
 
-API_KEY = os.environ.get("AGENT_FIREWALL_API_KEY", "dev-key-change-me")
+API_KEY = os.environ.get("AGENT_FIREWALL_API_KEY")
+if not API_KEY:
+    raise RuntimeError(
+        "AGENT_FIREWALL_API_KEY is not set. Refusing to start: "
+        "a firewall must never run with a default public key."
+    )
 
 app = FastAPI(title="Agent Firewall", version="0.2.0")
 
@@ -30,13 +35,17 @@ def root():
 def intercept(request: InterceptRequest, _=Depends(require_key)):
     decision = evaluate(request)
 
+    # Redact PII before anything is persisted: the audit log and the
+    # approval queue must never hold raw sensitive values.
+    redacted_input, pii_types = redact_pii(request.tool_input)
+
     # A REQUIRE_APPROVAL decision opens a pending item a human can act on.
     if decision.decision == "REQUIRE_APPROVAL":
         approval = approval_store.create(
             ApprovalRecord(
                 agent_id=request.agent_id,
                 tool_name=request.tool_name,
-                tool_input=request.tool_input,
+                tool_input=redacted_input,
                 reason=decision.reason,
                 risk_score=decision.risk_score,
             )
@@ -47,12 +56,13 @@ def intercept(request: InterceptRequest, _=Depends(require_key)):
         AuditEvent(
             agent_id=request.agent_id,
             tool_name=request.tool_name,
-            tool_input=request.tool_input,
+            tool_input=redacted_input,
             decision=decision.decision,
             risk_score=decision.risk_score,
             reason=decision.reason,
             policy_id=decision.policy_id,
             session_id=request.session_id,
+            pii_types=pii_types,
         )
     )
     return decision

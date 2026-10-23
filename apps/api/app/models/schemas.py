@@ -55,6 +55,7 @@ class AuditEvent(BaseModel):
     reason: str
     policy_id: Optional[str] = None
     session_id: Optional[str] = None
+    pii_types: List[str] = Field(default_factory=list)
 
 
 class ApprovalRecord(BaseModel):

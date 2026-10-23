@@ -48,6 +48,36 @@ def detect_pii(data: Any, types: List[str]) -> List[str]:
     return found
 
 
+def redact_pii(data: Any) -> tuple:
+    """Recursively replace PII values with [REDACTED:<type>] markers.
+
+    Returns (redacted_copy, found_types). Call this before persisting
+    tool_input anywhere (audit log, approval records) so raw sensitive
+    values never land in storage, even for PII types the policy allows
+    in normal operation (e.g. customer emails).
+    """
+    found: List[str] = []
+
+    def redact_text(text: str) -> str:
+        for pii_type, pattern in PII_PATTERNS.items():
+            new_text, n = re.subn(pattern, f"[REDACTED:{pii_type}]", text)
+            if n and pii_type not in found:
+                found.append(pii_type)
+            text = new_text
+        return text
+
+    def walk(value: Any) -> Any:
+        if isinstance(value, str):
+            return redact_text(value)
+        if isinstance(value, dict):
+            return {k: walk(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [walk(v) for v in value]
+        return value
+
+    return walk(data), found
+
+
 def detect_injection(text: str) -> bool:
     low = text.lower()
     return any(re.search(pat, low) for pat in INJECTION_PATTERNS)
