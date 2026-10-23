@@ -11,12 +11,15 @@ _POLICY_PATH = os.environ.get(
     os.path.join(os.path.dirname(os.path.dirname(__file__)), "policies.yaml"),
 )
 
-# PII patterns
+# PII patterns. The phone pattern deliberately requires separators (or
+# parens around the area code), so plain digit strings like order IDs
+# (5551234567) are not treated as phone numbers, and parenthesised area
+# codes are consumed whole instead of leaving a stray "(" behind.
 PII_PATTERNS = {
     "SSN": r"\b\d{3}-\d{2}-\d{4}\b",
     "credit_card": r"\b(?:\d{4}[-\s]?){3}\d{4}\b",
     "email": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
-    "phone": r"\b(?:\+\d{1,2}\s?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b",
+    "phone": r"(?<!\d)(?:\+\d{1,2}\s)?(?:\(\d{3}\)\s?|\d{3}[\s.-])\d{3}[\s.-]\d{4}\b",
 }
 
 # Common prompt-injection / instruction-override signatures.
@@ -69,6 +72,66 @@ def redact_pii(data: Any) -> tuple:
     def walk(value: Any) -> Any:
         if isinstance(value, str):
             return redact_text(value)
+        if isinstance(value, dict):
+            return {k: walk(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [walk(v) for v in value]
+        return value
+
+    return walk(data), found
+
+
+def _mask_email(m: "re.Match") -> str:
+    local, _, domain = m.group(0).partition("@")
+    return f"{local[:1]}***@{domain}" if local else m.group(0)
+
+
+def _mask_phone(m: "re.Match") -> str:
+    digits = re.sub(r"\D", "", m.group(0))
+    return f"(***) ***-{digits[-4:]}" if len(digits) >= 4 else "***"
+
+
+def _mask_ssn(m: "re.Match") -> str:
+    return f"***-**-{m.group(0)[-4:]}"
+
+
+def _mask_cc(m: "re.Match") -> str:
+    digits = re.sub(r"\D", "", m.group(0))
+    return f"****-****-****-{digits[-4:]}" if len(digits) >= 4 else "****"
+
+
+_MASKERS = {
+    "SSN": _mask_ssn,
+    "credit_card": _mask_cc,
+    "email": _mask_email,
+    "phone": _mask_phone,
+}
+
+
+def mask_pii(data: Any) -> tuple:
+    """Partially mask PII for human review (the approval queue).
+
+    Returns (masked_copy, found_types). Keeps just enough visible
+    (c***@example.com) for an approver to tell who an action is for,
+    unlike redact_pii which fully removes values for the audit log.
+    """
+    found: List[str] = []
+
+    def mask_text(text: str) -> str:
+        for pii_type, pattern in PII_PATTERNS.items():
+            masker = _MASKERS[pii_type]
+
+            def repl(m, _masker=masker, _t=pii_type):
+                if _t not in found:
+                    found.append(_t)
+                return _masker(m)
+
+            text = re.sub(pattern, repl, text)
+        return text
+
+    def walk(value: Any) -> Any:
+        if isinstance(value, str):
+            return mask_text(value)
         if isinstance(value, dict):
             return {k: walk(v) for k, v in value.items()}
         if isinstance(value, list):

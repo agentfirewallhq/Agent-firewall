@@ -43,12 +43,19 @@ def init_db():
                 reason TEXT NOT NULL,
                 policy_id TEXT,
                 session_id TEXT,
+                pii_types TEXT NOT NULL DEFAULT '[]',
                 prev_hash TEXT NOT NULL,
                 entry_hash TEXT NOT NULL
             )
             """
         )
         conn.commit()
+        # Migration for databases created before v0.2.1.
+        try:
+            conn.execute("ALTER TABLE audit_log ADD COLUMN pii_types TEXT NOT NULL DEFAULT '[]'")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
 
 def _payload(row_or_event, created_at: str) -> Dict[str, Any]:
@@ -80,13 +87,13 @@ def record(event: AuditEvent) -> Dict[str, Any]:
         conn.execute(
             """INSERT INTO audit_log
                (id, created_at, agent_id, tool_name, tool_input, decision,
-                risk_score, reason, policy_id, session_id, prev_hash, entry_hash)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                risk_score, reason, policy_id, session_id, pii_types, prev_hash, entry_hash)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 event.id, payload["created_at"], event.agent_id, event.tool_name,
                 json.dumps(event.tool_input, default=str), event.decision,
                 event.risk_score, event.reason, event.policy_id, event.session_id,
-                prev_hash, entry_hash,
+                json.dumps(event.pii_types), prev_hash, entry_hash,
             ),
         )
         conn.commit()
@@ -100,6 +107,10 @@ def list_events(limit: int = 100) -> List[Dict[str, Any]]:
     for r in rows:
         d = dict(r)
         d["tool_input"] = json.loads(d["tool_input"])
+        try:
+            d["pii_types"] = json.loads(d.get("pii_types") or "[]")
+        except Exception:
+            d["pii_types"] = []
         out.append(d)
     return out
 
