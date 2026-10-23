@@ -1,0 +1,31 @@
+# Agent Firewall — policy configuration
+# Edit this file to govern each agent. No code changes required.
+version: 1
+
+# Applied to every agent unless an agent overrides it.
+defaults:
+  # Tools that always pause for a human, regardless of amount.
+  require_approval_tools: ["issue_refund", "send_payment", "wire_funds", "delete_record"]
+  # PII types that are always blocked in tool inputs.
+  block_pii: ["SSN", "credit_card"]
+  # PII types that are fine in normal operation (e.g. emailing a customer).
+  allow_pii: ["email", "phone"]
+  # What to do when untrusted content carries an instruction: "deny" or "require_approval".
+  on_untrusted_instruction: "deny"
+
+agents:
+  agent-001:
+    description: "Research assistant"
+    allowed_tools: ["search_web", "read_file", "calculate"]
+    budget:
+      max_single_action_usd: 500
+      approval_threshold_usd: 200
+      max_daily_usd: 1000
+
+  agent-002:
+    description: "Customer support agent"
+    allowed_tools: ["search_web", "send_email", "read_file", "issue_refund"]
+    budget:
+      max_single_action_usd: 100
+      approval_threshold_usd: 25
+      max_daily_usd: 500

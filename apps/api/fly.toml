@@ -1,12 +1,19 @@
 app = 'agent-firewall-api'
 primary_region = 'lhr'
 
+[env]
+  AGENT_FIREWALL_DB = '/data/agent_firewall.db'
+
+[mounts]
+  source = 'af_data'
+  destination = '/data'
+
 [http_service]
   internal_port = 8080
   force_https = true
   auto_stop_machines = true
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
 
 [[vm]]
   memory = '1gb'
