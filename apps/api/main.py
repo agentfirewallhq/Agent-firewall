@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, Header, HTTPException, Depends
 from app.models.schemas import InterceptRequest, PolicyDecision, AuditEvent, ApprovalRecord
-from app.evaluate.policy_engine import evaluate, redact_pii
+from app.evaluate.policy_engine import evaluate, redact_pii, mask_pii
 from app.audit import store as audit_store
 from app.approvals import store as approval_store
 
@@ -12,7 +12,7 @@ if not API_KEY:
         "a firewall must never run with a default public key."
     )
 
-app = FastAPI(title="Agent Firewall", version="0.2.0")
+app = FastAPI(title="Agent Firewall", version="0.2.1")
 
 
 # Create tables at import so they exist however the app is started.
@@ -28,7 +28,7 @@ def require_key(x_api_key: str = Header(None)):
 
 @app.get("/")
 def root():
-    return {"status": "Agent Firewall is running", "version": "0.2.0"}
+    return {"status": "Agent Firewall is running", "version": "0.2.1"}
 
 
 @app.post("/intercept", response_model=PolicyDecision)
@@ -40,12 +40,15 @@ def intercept(request: InterceptRequest, _=Depends(require_key)):
     redacted_input, pii_types = redact_pii(request.tool_input)
 
     # A REQUIRE_APPROVAL decision opens a pending item a human can act on.
+    # The queue stores partially masked input (c***@example.com) so the
+    # approver can tell who the action is for without seeing raw PII.
     if decision.decision == "REQUIRE_APPROVAL":
+        masked_input, _ = mask_pii(request.tool_input)
         approval = approval_store.create(
             ApprovalRecord(
                 agent_id=request.agent_id,
                 tool_name=request.tool_name,
-                tool_input=redacted_input,
+                tool_input=masked_input,
                 reason=decision.reason,
                 risk_score=decision.risk_score,
             )
