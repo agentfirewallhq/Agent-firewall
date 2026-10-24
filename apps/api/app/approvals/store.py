@@ -67,10 +67,15 @@ def list_pending() -> List[Dict[str, Any]]:
 
 
 def decide(approval_id: str, approve: bool, decided_by: str = "human") -> Optional[Dict[str, Any]]:
+    """Decide a pending approval. Raises ValueError if the approval
+    was already decided: a denied action must never become approved
+    later by deciding it again, and vice versa."""
     with _lock, _connect() as conn:
-        row = conn.execute("SELECT id FROM approvals WHERE id=?", (approval_id,)).fetchone()
+        row = conn.execute("SELECT id, status FROM approvals WHERE id=?", (approval_id,)).fetchone()
         if not row:
             return None
+        if row["status"] != "PENDING":
+            raise ValueError(f"Approval {approval_id} already decided: {row['status']}")
         conn.execute(
             "UPDATE approvals SET status=?, decided_at=?, decided_by=? WHERE id=?",
             ("APPROVED" if approve else "DENIED", datetime.now(timezone.utc).isoformat(), decided_by, approval_id),

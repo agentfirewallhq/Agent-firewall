@@ -15,23 +15,37 @@ _POLICY_PATH = os.environ.get(
 # parens around the area code), so plain digit strings like order IDs
 # (5551234567) are not treated as phone numbers, and parenthesised area
 # codes are consumed whole instead of leaving a stray "(" behind.
+# The credit-card pattern covers 16-digit cards plus 15-digit Amex
+# (34/37 prefix, 4-6-5 grouping). Bare 9-digit SSNs are only flagged
+# with SSN context words nearby (see _SSN_CONTEXT): a bare 9-digit run
+# on its own is indistinguishable from an order ID, and blocking all
+# of them would reintroduce the false positives the phone rule fixed.
 PII_PATTERNS = {
     "SSN": r"\b\d{3}-\d{2}-\d{4}\b",
-    "credit_card": r"\b(?:\d{4}[-\s]?){3}\d{4}\b",
+    "credit_card": r"\b(?:(?:\d{4}[-\s]?){3}\d{4}|3[47]\d{2}[-\s]?\d{6}[-\s]?\d{5})\b",
     "email": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
     "phone": r"(?<!\d)(?:\+\d{1,2}\s)?(?:\(\d{3}\)\s?|\d{3}[\s.-])\d{3}[\s.-]\d{4}\b",
 }
+_SSN_CONTEXT = re.compile(r"ssn|social\s+security", re.IGNORECASE)
+_SSN_BARE = r"\b\d{9}\b"
 
 # Common prompt-injection / instruction-override signatures.
 # Conservative heuristics: they favour flagging over missing an attack.
 INJECTION_PATTERNS = [
     r"ignore (all )?(your |the )?(previous|above|prior) (instructions|rules)",
+    r"ignore (everything|all of the above|the above)",
     r"disregard (the |your )?(previous|above|system)",
+    r"disregard (everything|all|the above)",
+    r"forget (your |the )?(previous|above|prior|system) (instructions|rules)?",
     r"you are now ",
     r"new instructions\s*:",
     r"system\s*:",
     r"reveal (your )?(system )?(prompt|instructions)",
     r"override (the |your )?(policy|limit|rules)",
+    r"polic(y|ies)\s+(changed|have changed|updated)[^.]{0,60}(approval|permission|authori[sz])",
+    r"no longer (need|needs|require[sd]?) (approval|permission|authorization)",
+    r"(refunds?|payments?|transfers?)[^.]{0,40}no longer need approval",
+    r"without (approval|permission|authorization)",
     r"act as (an? )?(unrestricted|admin|developer)",
 ]
 
@@ -48,6 +62,10 @@ def detect_pii(data: Any, types: List[str]) -> List[str]:
         pattern = PII_PATTERNS.get(pii_type)
         if pattern and re.search(pattern, text):
             found.append(pii_type)
+    # Bare 9-digit SSN, only with SSN context words in the same text.
+    if "SSN" in types and "SSN" not in found:
+        if _SSN_CONTEXT.search(text) and re.search(_SSN_BARE, text):
+            found.append("SSN")
     return found
 
 
@@ -62,10 +80,19 @@ def redact_pii(data: Any) -> tuple:
     found: List[str] = []
 
     def redact_text(text: str) -> str:
+        # Context is judged on the original text: a "[REDACTED:SSN]"
+        # marker left by the dashed-SSN pattern must not itself count
+        # as SSN context for bare 9-digit runs in the same string.
+        ssn_context = bool(_SSN_CONTEXT.search(text))
         for pii_type, pattern in PII_PATTERNS.items():
             new_text, n = re.subn(pattern, f"[REDACTED:{pii_type}]", text)
             if n and pii_type not in found:
                 found.append(pii_type)
+            text = new_text
+        if ssn_context:
+            new_text, n = re.subn(_SSN_BARE, "[REDACTED:SSN]", text)
+            if n and "SSN" not in found:
+                found.append("SSN")
             text = new_text
         return text
 
@@ -118,6 +145,7 @@ def mask_pii(data: Any) -> tuple:
     found: List[str] = []
 
     def mask_text(text: str) -> str:
+        ssn_context = bool(_SSN_CONTEXT.search(text))
         for pii_type, pattern in PII_PATTERNS.items():
             masker = _MASKERS[pii_type]
 
@@ -127,6 +155,13 @@ def mask_pii(data: Any) -> tuple:
                 return _masker(m)
 
             text = re.sub(pattern, repl, text)
+        if ssn_context:
+            def repl_ssn(m):
+                if "SSN" not in found:
+                    found.append("SSN")
+                return f"***-**-{m.group(0)[-4:]}"
+
+            text = re.sub(_SSN_BARE, repl_ssn, text)
         return text
 
     def walk(value: Any) -> Any:
@@ -147,15 +182,10 @@ def detect_injection(text: str) -> bool:
 
 
 def _amount_from(tool_input: Dict[str, Any]) -> float:
-    if not isinstance(tool_input, dict):
-        return 0.0
-    for key in ("amount_usd", "amount", "total_usd"):
-        if key in tool_input:
-            try:
-                return float(tool_input[key])
-            except (TypeError, ValueError):
-                pass
-    return 0.0
+    """Largest finite, non-negative amount found (see audit.extract_amount).
+    Kept as a thin wrapper: the canonical extraction lives in the audit
+    store so spend accounting and policy checks can never drift apart."""
+    return _audit.extract_amount(tool_input)[0]
 
 
 def evaluate(request: InterceptRequest) -> PolicyDecision:
@@ -213,8 +243,19 @@ def evaluate(request: InterceptRequest) -> PolicyDecision:
             policy_id="pii_detector",
         )
 
+    # Policy 3b: Malformed amounts are denied outright. A negative,
+    # NaN, infinite, or unparseable amount is never treated as $0:
+    # treating it as $0 is exactly how caps get bypassed.
+    amount, amount_invalid = _audit.extract_amount(request.tool_input)
+    if amount_invalid:
+        return PolicyDecision(
+            decision="DENY",
+            risk_score=90,
+            reason="Invalid amount in tool input (negative, non-finite, or malformed). Action blocked.",
+            policy_id="amount_validation",
+        )
+
     # Policy 4: Hard budget limit (deny outright).
-    amount = _amount_from(request.tool_input)
     budget = policy.get("budget") or {}
     hard = budget.get("max_single_action_usd")
     if hard is not None and amount > hard:
