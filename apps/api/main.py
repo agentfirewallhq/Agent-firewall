@@ -1,5 +1,6 @@
 import os
-from fastapi import FastAPI, Header, HTTPException, Depends
+from fastapi import FastAPI, Header, HTTPException, Depends, Request
+from fastapi.responses import FileResponse
 from app.models.schemas import InterceptRequest, PolicyDecision, AuditEvent, ApprovalRecord
 from app.evaluate.policy_engine import evaluate, redact_pii, mask_pii
 from app.audit import store as audit_store
@@ -26,8 +27,17 @@ def require_key(x_api_key: str = Header(None)):
     return True
 
 
+LANDING_PATH = os.path.join(os.path.dirname(__file__), "landing.html")
+
+
 @app.get("/")
-def root():
+def root(request: Request):
+    # Browsers get the landing page; API clients keep the JSON version reply.
+    # httpx/curl default Accept (*/*) does not contain "text/html", so automated
+    # checks are unaffected.
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept and os.path.exists(LANDING_PATH):
+        return FileResponse(LANDING_PATH, media_type="text/html")
     return {"status": "Agent Firewall is running", "version": "0.2.1"}
 
 

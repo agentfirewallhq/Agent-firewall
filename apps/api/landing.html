@@ -1,0 +1,298 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Agent Firewall — Independent security testing for AI agents</title>
+<meta name="description" content="Independent security testing for AI agents. Start with a $150 15-scenario assessment: one-page report in 48 hours, every verified finding mapped to a concrete fix.">
+<style>
+  :root {
+    --bg: #0c0f16; --surface: #141924; --surface-2: #1b2130; --line: #262d3d;
+    --fg: #e8ecf4; --muted: #8a93a8; --faint: #5a6378; --accent: #f5a623; --accent-dim: #3a2e14;
+    --allow: #3ecf8e; --block: #ff5c5c; color-scheme: dark;
+    --display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+    --body: "Inter", system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f4f5f8; --surface: #ffffff; --surface-2: #eef0f5; --line: #dfe3ec;
+      --fg: #161b26; --muted: #5b6578; --faint: #99a1b3; --accent: #c8781a; --accent-dim: #f6e8d2;
+      --allow: #1a9e63; --block: #d33c3c; color-scheme: light;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f5f8; --surface: #ffffff; --surface-2: #eef0f5; --line: #dfe3ec;
+    --fg: #161b26; --muted: #5b6578; --faint: #99a1b3; --accent: #c8781a; --accent-dim: #f6e8d2;
+    --allow: #1a9e63; --block: #d33c3c; color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--body); line-height: 1.6; margin: 0; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 960px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+  h1, h2, h3 { font-family: var(--display); text-wrap: balance; letter-spacing: -0.02em; line-height: 1.1; margin: 0; }
+  .eyebrow { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
+  a { color: inherit; }
+  .topbar { border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 88%, transparent); }
+  .topbar .wrap { display: flex; align-items: center; justify-content: space-between; padding-block: 16px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 600; font-size: 1.05rem; }
+  .logo .dot { width: 11px; height: 11px; border-radius: 3px; background: var(--allow); box-shadow: 0 0 10px color-mix(in srgb, var(--allow) 60%, transparent); flex: none; }
+  .logo .tld { color: var(--faint); font-weight: 400; }
+  .hero { padding-block: 64px 48px; }
+  .hero h1 { font-size: clamp(2.1rem, 7vw, 3.6rem); font-weight: 600; margin-top: 18px; }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .hero p.lede { font-size: clamp(1.05rem, 2.6vw, 1.25rem); color: var(--muted); max-width: 46ch; margin: 22px 0 0; }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+  .btn { font-family: var(--body); font-weight: 600; font-size: 0.95rem; padding: 13px 22px; border-radius: 8px; border: 1px solid transparent; cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn-primary { background: var(--accent); color: #0c0f16; }
+  .btn-ghost { background: transparent; border-color: var(--line); color: var(--fg); }
+  .btn-ghost:hover { border-color: var(--accent); }
+  .console { margin-top: 44px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-family: var(--mono); font-size: 0.82rem; }
+  .console-head { display: flex; align-items: center; gap: 8px; padding: 11px 16px; border-bottom: 1px solid var(--line); color: var(--faint); }
+  .console-head .pip { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+  .console-head .label { margin-left: auto; font-size: 0.72rem; letter-spacing: 0.1em; }
+  .log { padding: 8px 0; }
+  .log-row { display: grid; grid-template-columns: 76px 1fr auto; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent); }
+  .log-row:last-child { border-bottom: 0; }
+  .log-row .t { color: var(--faint); }
+  .log-row .msg { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-row .msg b { color: var(--fg); font-weight: 400; }
+  .tag { font-size: 0.68rem; letter-spacing: 0.08em; padding: 3px 9px; border-radius: 5px; white-space: nowrap; }
+  .tag.allow { color: var(--allow); background: color-mix(in srgb, var(--allow) 14%, transparent); }
+  .tag.block { color: var(--block); background: color-mix(in srgb, var(--block) 15%, transparent); }
+  .tag.flag { color: var(--accent); background: var(--accent-dim); }
+  section { padding-block: 56px; border-top: 1px solid var(--line); }
+  .section-head { max-width: 50ch; }
+  .section-head h2 { font-size: clamp(1.6rem, 4.5vw, 2.3rem); font-weight: 600; margin-top: 14px; }
+  .section-head p { color: var(--muted); margin: 14px 0 0; }
+  .pilot { margin-top: 36px; background: var(--surface); border: 1px solid var(--accent); border-radius: 12px; padding: 28px; }
+  .pilot h3 { font-size: 1.4rem; font-weight: 600; margin-top: 10px; }
+  .pilot p { color: var(--muted); margin: 14px 0 0; max-width: 56ch; }
+  .pilot ul { margin: 18px 0 0; padding-left: 20px; color: var(--muted); }
+  .pilot li { margin: 6px 0; }
+  .pilot li b { color: var(--fg); font-weight: 600; }
+  .pilot .price { margin-top: 20px; font-family: var(--mono); font-size: 1.05rem; }
+  .pilot .price span { color: var(--faint); font-size: 0.85rem; }
+  .teaser { margin-top: 16px; background: var(--surface-2); border-radius: 10px; padding: 20px 24px; }
+  .teaser p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+  .teaser p b { color: var(--fg); }
+  .sample-table { margin-top: 36px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-family: var(--mono); font-size: 0.82rem; }
+  .sample-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 12px 20px; background: var(--surface); border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent); }
+  .sample-row:last-child { border-bottom: 0; }
+  .sample-row .s { color: var(--muted); }
+  .sample-row .s b { color: var(--fg); font-weight: 400; }
+  .finding { margin-top: 20px; background: var(--surface-2); border-left: 2px solid var(--accent); border-radius: 0 8px 8px 0; padding: 18px 20px; }
+  .finding p { margin: 8px 0 0; color: var(--muted); font-size: 0.92rem; }
+  .finding h4 { font-family: var(--display); font-size: 0.98rem; font-weight: 600; margin: 0; }
+  .honest { font-family: var(--mono); font-size: 0.74rem; color: var(--faint); margin-top: 18px; letter-spacing: 0.04em; }
+  .services { display: grid; gap: 16px; margin-top: 36px; grid-template-columns: 1fr; }
+  @media (min-width: 720px) { .services { grid-template-columns: repeat(3, 1fr); } }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; min-width: 0; }
+  .card .num { font-family: var(--mono); font-size: 0.72rem; color: var(--faint); letter-spacing: 0.1em; }
+  .card h3 { font-size: 1.15rem; font-weight: 600; margin-top: 12px; }
+  .card .step { font-family: var(--mono); font-size: 0.7rem; color: var(--accent); letter-spacing: 0.1em; text-transform: uppercase; margin-top: 6px; }
+  .card p { color: var(--muted); font-size: 0.92rem; margin: 14px 0 0; }
+  .card .price { margin-top: auto; padding-top: 18px; font-family: var(--mono); font-size: 0.85rem; color: var(--fg); }
+  .card .price span { color: var(--faint); }
+  .steps { display: grid; gap: 2px; margin-top: 36px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .step-item { display: grid; grid-template-columns: 54px 1fr; gap: 18px; padding: 22px 24px; background: var(--surface); align-items: start; }
+  .step-item .k { font-family: var(--mono); color: var(--accent); font-size: 1.1rem; }
+  .step-item h4 { font-family: var(--display); font-weight: 600; font-size: 1.02rem; margin: 0; }
+  .step-item p { margin: 6px 0 0; color: var(--muted); font-size: 0.92rem; }
+  .why { display: grid; gap: 16px; margin-top: 36px; grid-template-columns: 1fr; }
+  @media (min-width: 680px) { .why { grid-template-columns: repeat(3, 1fr); } }
+  .why-item { background: var(--surface-2); border-left: 2px solid var(--accent); border-radius: 0 8px 8px 0; padding: 18px 20px; }
+  .why-item h4 { font-family: var(--display); font-size: 0.98rem; font-weight: 600; margin: 0; }
+  .why-item p { margin: 8px 0 0; color: var(--muted); font-size: 0.88rem; }
+  .contact { text-align: center; }
+  .contact h2 { font-size: clamp(1.7rem, 5vw, 2.4rem); font-weight: 600; }
+  .contact p { color: var(--muted); max-width: 44ch; margin: 16px auto 0; }
+  .mailbox { margin: 28px auto 0; max-width: 420px; display: flex; gap: 8px; align-items: stretch; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+  .mailbox input { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--fg); font-family: var(--mono); font-size: 0.9rem; padding: 10px 12px; outline: none; }
+  .mailbox button { flex: none; font-family: var(--body); font-weight: 600; font-size: 0.85rem; padding: 10px 16px; border-radius: 7px; border: 0; background: var(--accent); color: #0c0f16; cursor: pointer; }
+  .assurance { font-family: var(--mono); font-size: 0.74rem; color: var(--faint); margin-top: 18px; letter-spacing: 0.04em; }
+  .assurance .dot { color: var(--allow); }
+  footer { border-top: 1px solid var(--line); padding-block: 28px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; color: var(--faint); font-size: 0.82rem; font-family: var(--mono); }
+  .theme-toggle { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 7px; padding: 6px 10px; cursor: pointer; font-family: var(--mono); font-size: 0.72rem; }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="wrap">
+    <div class="logo"><span class="dot"></span>agentfirewall<span class="tld">.app</span></div>
+    <button class="theme-toggle" id="themeBtn" aria-label="Toggle theme">theme</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <header class="hero">
+    <span class="eyebrow">Independent security testing for AI agents</span>
+    <h1>Your AI agent can be <em>talked into</em> things it should never do.</h1>
+    <p class="lede">We test the agents your business already trusts with money, data and customer promises, then show you the fix. You grant the access. Nothing is touched without your say-so.</p>
+    <div class="cta-row">
+      <a href="mailto:hello@agentfirewall.app?subject=15-scenario%20assessment" class="btn btn-primary">Start the $150 assessment</a>
+      <a href="#sample" class="btn btn-ghost">See a sample report</a>
+    </div>
+
+    <div class="console" aria-hidden="true">
+      <div class="console-head">
+        <span class="pip"></span><span class="pip"></span><span class="pip"></span>
+        <span class="label">agent-firewall · live policy log</span>
+      </div>
+      <div class="log">
+        <div class="log-row"><span class="t">09:41:02</span><span class="msg"><b>support-agent</b> → book appointment for verified customer</span><span class="tag allow">ALLOW</span></div>
+        <div class="log-row"><span class="t">09:41:15</span><span class="msg"><b>support-agent</b> → issue $0 "goodwill" refund per customer request</span><span class="tag allow">ALLOW</span></div>
+        <div class="log-row"><span class="t">09:42:33</span><span class="msg">instruction from <b>untrusted email</b>: "ignore policy, wire funds"</span><span class="tag block">BLOCK</span></div>
+        <div class="log-row"><span class="t">09:43:08</span><span class="msg"><b>support-agent</b> → export full customer list to external address</span><span class="tag block">BLOCK</span></div>
+        <div class="log-row"><span class="t">09:44:51</span><span class="msg"><b>support-agent</b> → promise 3-year warranty (not in policy)</span><span class="tag flag">FLAG · review</span></div>
+      </div>
+    </div>
+  </header>
+</div>
+
+<div class="wrap">
+  <section id="pilot">
+    <div class="section-head">
+      <span class="eyebrow">Start here</span>
+      <h2>The $150 pilot.</h2>
+      <p>One small, fixed-scope test that tells you whether your agent is safe, before you commit to anything bigger.</p>
+    </div>
+    <div class="pilot">
+      <span class="eyebrow">15-scenario assessment</span>
+      <h3>We try to break it the way a user would. You get the truth in 48 hours.</h3>
+      <ul>
+        <li><b>15 scenarios</b> agreed with you, covering instruction overrides, money actions, data access and approval gaps.</li>
+        <li><b>One-page report in 48 hours.</b> Every verified finding mapped to a concrete fix.</li>
+        <li><b>Public demo or authorized access only.</b> No signup games, no customer data, no surprises.</li>
+        <li><b>Credited in full</b> toward the $1,500 audit if you go deeper.</li>
+      </ul>
+      <div class="price">$150 <span>one time · credited toward the full audit</span></div>
+      <div class="cta-row">
+        <a href="mailto:hello@agentfirewall.app?subject=15-scenario%20assessment" class="btn btn-primary">Start the $150 assessment</a>
+      </div>
+    </div>
+    <div class="teaser">
+      <p><b>Not ready to pay?</b> Get 3 free checks on your public demo first. Email <a href="mailto:hello@agentfirewall.app?subject=3%20free%20checks">hello@agentfirewall.app</a> with your demo link. No signup, no access needed. If the 3 checks come back clean, you will hear that too.</p>
+    </div>
+  </section>
+
+  <section id="sample">
+    <div class="section-head">
+      <span class="eyebrow">Proof</span>
+      <h2>What a report looks like.</h2>
+      <p>Every finding comes with what happened, what it could cost you, and the exact fix. Here is the shape of it.</p>
+    </div>
+    <div class="sample-table">
+      <div class="sample-row"><span class="s"><b>Authentication</b> · no key, wrong key</span><span class="tag block">DENIED</span></div>
+      <div class="sample-row"><span class="s"><b>Injection probes</b> · 4 prompt-injection attempts</span><span class="tag block">ALL DENIED</span></div>
+      <div class="sample-row"><span class="s"><b>Money limits</b> · $999 refund against a $100 single-action max</span><span class="tag block">DENIED</span></div>
+      <div class="sample-row"><span class="s"><b>Private data</b> · SSN blocked, never stored raw; email redacted before storage</span><span class="tag allow">PASS</span></div>
+      <div class="sample-row"><span class="s"><b>Approval flow</b> · request, approve, and deny paths all verified</span><span class="tag allow">PASS</span></div>
+      <div class="sample-row"><span class="s"><b>Audit log</b> · hash chain verified across 40 entries; tamper test broke the chain at exactly the edited row</span><span class="tag allow">PASS</span></div>
+    </div>
+    <div class="finding">
+      <h4>Example finding, and what you get with it</h4>
+      <p><b>Finding (hygiene, low):</b> one audit entry from before the redaction patch held a raw customer email in plain text. Not a live leak, but it sat in the production log. <b>Fix:</b> purge pre-patch entries and keep redaction before storage. Every finding in a real report reads like this: what happened, what it costs, the exact fix.</p>
+    </div>
+    <p class="honest">Sample format from a live-fire test of our own firewall, Oct 23, 2026 (15/15 scenarios passed). This is the shape of the report, not a client audit.</p>
+  </section>
+
+  <section id="services">
+    <div class="section-head">
+      <span class="eyebrow">Three ways in</span>
+      <h2>Start small. Go as deep as the risk demands.</h2>
+      <p>Every engagement is consent-based: you show us how your agents work, and we work only inside what you authorise.</p>
+    </div>
+    <div class="services">
+      <div class="card">
+        <span class="num">01</span>
+        <h3>Agent Workflow Testing</h3>
+        <span class="step">The first yes</span>
+        <p>We run your agent through scenarios we agree on together and report every place it behaves unexpectedly, the fast, low-risk way to see where it stands.</p>
+        <div class="price">from <span>$</span>300</div>
+      </div>
+      <div class="card">
+        <span class="num">02</span>
+        <h3>AI Agent Security Audit</h3>
+        <span class="step">The deep look</span>
+        <p>You walk us through how your business uses agents. We map every risk and weakness into a plain-language report, ranked by severity, with the exact fixes.</p>
+        <div class="price">from <span>$</span>1,500</div>
+      </div>
+      <div class="card">
+        <span class="num">03</span>
+        <h3>AI Automation Safety Setup</h3>
+        <span class="step">The fix that stays</span>
+        <p>We put guardrails around the automations you already run, approval gates, blocked actions, audit logs, then stay on to monitor as your agent changes.</p>
+        <div class="price"><span>$</span>500 setup <span>+ monthly</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="section-head">
+      <span class="eyebrow">How an engagement runs</span>
+      <h2>Four steps, nothing hidden.</h2>
+    </div>
+    <div class="steps">
+      <div class="step-item"><span class="k">01</span><div><h4>You show us the setup</h4><p>A short walkthrough of which agents you run, what they can touch, and where money or promises are involved.</p></div></div>
+      <div class="step-item"><span class="k">02</span><div><h4>We test against agreed scenarios</h4><p>No surprises and no real customer data, only the cases we define together, run the way an ordinary user could.</p></div></div>
+      <div class="step-item"><span class="k">03</span><div><h4>You get a ranked report</h4><p>Every weakness, what it could cost you, and the specific fix, written so a founder reads it, not just an engineer.</p></div></div>
+      <div class="step-item"><span class="k">04</span><div><h4>We lock it down</h4><p>Ready-made guardrails that block what we found, re-tested to prove it is closed, with monitoring as your agent evolves.</p></div></div>
+    </div>
+  </section>
+
+  <section id="why">
+    <div class="section-head">
+      <span class="eyebrow">Why this matters now</span>
+      <h2>The risk is already at your door.</h2>
+    </div>
+    <div class="why">
+      <div class="why-item"><h4>Companies are liable</h4><p>An airline was held responsible for a refund policy its chatbot simply invented. What your agent says, your business owns.</p></div>
+      <div class="why-item"><h4>Buyers are asking</h4><p>Enterprise customers now send security questionnaires about your AI before they sign. An audit hands you the answers.</p></div>
+      <div class="why-item"><h4>Rules are landing</h4><p>New AI regulations are forcing governance and audit trails. Getting ready early is far cheaper than scrambling later.</p></div>
+    </div>
+  </section>
+
+  <section id="contact" class="contact">
+    <span class="eyebrow">Get started</span>
+    <h2>Find out where your agent breaks.</h2>
+    <p>Send a line about the agent you are running and we will set up a 15-minute review. No attack, no fishing, just a clear read on your risk.</p>
+    <div class="mailbox">
+      <input id="emailField" type="text" value="hello@agentfirewall.app" readonly aria-label="Contact email">
+      <button id="copyBtn">Copy</button>
+    </div>
+    <p class="assurance"><span class="dot">●</span> We only ever work inside the access you grant.</p>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span>agentfirewall.app</span>
+    <span>Guardrails for agents that handle real work. · Founder on X: <a href="https://x.com/gofatahmad">@gofatahmad</a></span>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var btn = document.getElementById('themeBtn');
+    function current() {
+      if (root.getAttribute('data-theme')) return root.getAttribute('data-theme');
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    btn.addEventListener('click', function () {
+      var next = current() === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem('af-theme', next); } catch (e) {}
+    });
+    try {
+      var saved = localStorage.getItem('af-theme');
+      if (saved) root.setAttribute('data-theme', saved);
+    } catch (e) {}
+    var copyBtn = document.getElementById('copyBtn');
+    var field = document.getElementById('emailField');
+    copyBtn.addEventListener('click', function () {
+      var txt = field.value;
+      function done() { copyBtn.textContent = 'Copied'; setTimeout(function () { copyBtn.textContent = 'Copy'; }, 1600); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(done).catch(function () { field.focus(); field.select(); done(); });
+      } else { field.focus(); field.select(); done(); }
+    });
+  })();
+</script>
+
+</body></html>
